@@ -109,13 +109,18 @@ int main(int argc, char **argv) {
     char base[64];
     const char *a0 = (argc > 0 && argv[0]) ? argv[0] : "${name}";
     copy_basename(base, sizeof base, a0);
-    if (strcmp(base, "${name}") == 0) {
-        if (argc < 2) return usage(a0);
-        copy_basename(base, sizeof base, argv[1]);
-        argv++; argc--;
-    }
+    /* Invoked under an applet name (an argv[0] shim) -> run it directly. */
     for (const struct applet *a = applets; a->name; a++)
         if (strcmp(base, a->name) == 0) return a->fn(argc, argv);
+    /* Invoked as the multicall binary under ANY other name -- its own
+       "${name}", a full path, or a copy/rename like CI's smoke.exe -> take
+       argv[1] as the applet. (Keying only on "${name}" would reject the
+       renamed-binary smoke test, which is why the other multicall packages
+       had to drop their smoke entirely.) */
+    if (argc < 2) return usage(a0);
+    copy_basename(base, sizeof base, argv[1]);
+    for (const struct applet *a = applets; a->name; a++)
+        if (strcmp(base, a->name) == 0) return a->fn(argc - 1, argv + 1);
     fprintf(stderr, "${name}: unknown applet '%s'\n", base);
     return usage(a0);
 }
