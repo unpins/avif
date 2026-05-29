@@ -1,6 +1,6 @@
 # avif
 
-Standalone build of the [libavif](https://github.com/AOMediaCodec/libavif) command-line tools — `avifenc` (encode) and `avifdec` (decode) for the AVIF image format.
+Standalone build of the [libavif](https://github.com/AOMediaCodec/libavif) command-line tools — `avifenc` (encode), `avifdec` (decode) and `avifgainmaputil` (HDR gain-map manipulation) for the AVIF image format.
 
 [![CI](https://github.com/unpins/avif/actions/workflows/avif.yml/badge.svg)](https://github.com/unpins/avif/actions)
 ![Linux](https://img.shields.io/badge/Linux-✓-success?logo=linux&logoColor=white)
@@ -17,7 +17,7 @@ Install with [unpin](https://github.com/unpins/unpin):
 unpin avif
 ```
 
-This drops both `avifenc` and `avifdec` on your PATH (they are argv[0] shims into one multicall binary).
+This drops `avifenc`, `avifdec` and `avifgainmaputil` on your PATH (they are argv[0] shims into one multicall binary).
 
 ## Build locally
 
@@ -41,9 +41,11 @@ The [Releases](https://github.com/unpins/avif/releases) page has standalone bina
 
 ## Build notes
 
-- **Multicall:** one binary at `bin/avif` carries both tools; `avifenc` / `avifdec` are dispatched by `argv[0]`. Invoke the bare binary as `avif <tool> [args]` too.
+- **Multicall:** one binary at `bin/avif` carries all three tools; `avifenc` / `avifdec` / `avifgainmaputil` are dispatched by `argv[0]`. Invoke the bare binary as `avif <tool> [args]` too.
 - **Codecs:** AV1 encode via [aom](https://aomedia.googlesource.com/aom/), decode via [dav1d](https://code.videolan.org/videolan/dav1d). Reads/writes PNG, JPEG, and y4m.
+- **Gain maps:** `avifgainmaputil` and `avifenc`'s gain-map-from-JPEG conversion are on (static `libxml2`).
 - **Windows:** `mingw` cross, single `.exe`, no companion DLLs.
-- **macOS:** static `.a` codec chain linked in; only system frameworks/libSystem stay dynamic.
+- **macOS:** static `.a` codec chain linked in; only `libSystem` stays dynamic.
+- **Not shipped:** the gdk-pixbuf thumbnailer loader (dynamic pixbuf module, not a CLI). No upstream man pages.
 
 The codec chain (`libavif`, `libyuv`, `aom`, `dav1d`, …) is the same one wired up for [chafa](https://github.com/unpins/chafa) in [`nix-lib/native-overlay`](https://github.com/unpins/nix-lib/tree/main/native-overlay); here the apps are turned back on and post-linked into the multicall binary.

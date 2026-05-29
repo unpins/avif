@@ -8,13 +8,13 @@
 
   inputs.unpins-lib.url = "github:unpins/nix-lib";
 
-  # libavif ships its CLI tools (avifenc / avifdec) as "apps". The shared
-  # nix-lib overlay used by chafa builds the library decode-only (apps off —
-  # chafa just wants libavif.a to read AVIF); here we turn the apps back on,
-  # keep the aom encoder, and post-link avifenc + avifdec into a single `avif`
-  # binary (multicall.nix). The image-codec chain (libyuv/aom/dav1d/sharpyuv +
-  # png/jpeg/zlib/webp/xml2) is the SAME one chafa proved across all nine
-  # targets, so the deps are cache hits.
+  # libavif ships its CLI tools (avifenc / avifdec / avifgainmaputil) as
+  # "apps". The shared nix-lib overlay used by chafa builds the library
+  # decode-only (apps off — chafa just wants libavif.a to read AVIF); here we
+  # turn the apps back on, keep the aom encoder, and post-link all three into a
+  # single `avif` binary (multicall.nix). The image-codec chain
+  # (libyuv/aom/dav1d/sharpyuv + png/jpeg/zlib/webp/xml2) is the SAME one chafa
+  # proved across all nine targets, so the deps are cache hits.
   outputs = { self, unpins-lib }:
     let
       ulib = unpins-lib.lib;
@@ -47,13 +47,28 @@
           dropApps = lib.filter
             (x: !(builtins.elem (x.pname or x.name or "")
               [ "gdk-pixbuf" "gtest" "make-shell-wrapper-hook" ]));
+          # Libs libxml2.a (gain-map path) pulls in that find_package(LibXml2)
+          # does NOT put on the link: darwin's separate static iconv; mingw's
+          # BCryptGenRandom (bcrypt, used for libxml2's hash randomization).
+          # musl folds iconv into libc and has getrandom, so Linux needs nothing.
+          xmlExtraLibs =
+            if host.isDarwin then "-liconv"
+            else if host.isMinGW then "-lbcrypt"
+            else "";
         in
         p.libavif.overrideAttrs (old: {
           pname = "avif-apps";
           nativeBuildInputs =
             if host.isMinGW then dropApps (old.nativeBuildInputs or [ ])
             else (old.nativeBuildInputs or [ ]);
-          buildInputs = dropApps (old.buildInputs or [ ])
+          # darwin: libxml2.a (gain-map path) calls iconv, which lives in a
+          # separate static libiconv (musl folds it into libc → Linux needs
+          # nothing). Prepend pkgsStatic.libiconv so the linker sees libiconv.a
+          # ahead of the SDK's libiconv.tbd — `-liconv` then resolves static and
+          # emits no /usr/lib/libiconv.2.dylib load command (same lever as the
+          # unpin CLI; the explicit `-liconv` is injected in postPatch below).
+          buildInputs = lib.optional host.isDarwin p.libiconv
+            ++ dropApps (old.buildInputs or [ ])
             # mingw: aom.pc `Requires: libvmaf`, and libvmaf.a calls
             # pthread_mutex_*; the cmake apps link then needs winpthreads on the
             # path (`-lpthread`). Adding it lets Findaom.cmake's find_library
@@ -61,16 +76,6 @@
             ++ lib.optionals host.isMinGW [ p.windows.pthreads ];
           propagatedBuildInputs = dropApps (old.propagatedBuildInputs or [ ]);
           postPatch = (old.postPatch or "") + ''
-            # avifgainmaputil (experimental HDR gain-map tool) is built
-            # unconditionally under AVIF_BUILD_APPS, but we only ship
-            # avifenc/avifdec. Exclude it from `all` + the install set so it is
-            # neither built nor installed — it also pulls the heaviest C++
-            # surface (libargparse) and the gain-map/libxml2 path we drop below.
-            substituteInPlace CMakeLists.txt \
-              --replace-fail 'add_executable(avifgainmaputil "''${AVIFGAINMAPUTIL_SRCS}")' \
-                             'add_executable(avifgainmaputil EXCLUDE_FROM_ALL "''${AVIFGAINMAPUTIL_SRCS}")' \
-              --replace-fail 'TARGETS avifenc avifdec avifgainmaputil' \
-                             'TARGETS avifenc avifdec'
             # Findaom.cmake reflects aom.pc's `Libs.private: -lm` into a
             # find_library(_aom_dep_lib_m m). On mingw there is no standalone
             # libm (math lives in the C runtime), so the lookup yields the
@@ -82,6 +87,14 @@
                              'if(_aom_dep_lib_''${_lib})
             target_link_libraries(aom INTERFACE ''${_aom_dep_lib_''${_lib}})
         endif()'
+          '' + lib.optionalString (xmlExtraLibs != "") ''
+            # Append libxml2.a's extra deps after LibXml2 in avif_apps' link so
+            # they propagate to every app that pulls libxml2.a (darwin: -liconv
+            # binds static via pkgsStatic.libiconv on buildInputs, no dylib load;
+            # mingw: -lbcrypt resolves BCryptGenRandom from the win32 sysroot).
+            substituteInPlace CMakeLists.txt \
+              --replace-fail 'target_link_libraries(avif_apps''${suffix} PRIVATE LibXml2::LibXml2)' \
+                             'target_link_libraries(avif_apps''${suffix} PRIVATE LibXml2::LibXml2 ${xmlExtraLibs})'
           '';
           cmakeFlags = [
             "-DBUILD_SHARED_LIBS=OFF"
@@ -90,11 +103,11 @@
             "-DAVIF_BUILD_APPS=ON"
             "-DAVIF_BUILD_GDK_PIXBUF=OFF"
             "-DAVIF_LIBSHARPYUV=SYSTEM"
-            # libxml2 only enables avifenc's experimental gain-map-from-JPEG
-            # conversion; we ship no gain-map tooling (avifgainmaputil dropped
-            # above) and it drags an unfulfilled iconv dep into the static
-            # darwin link (libxml2.a → _iconv/_iconv_open/_iconv_close). Off.
-            "-DAVIF_LIBXML2=OFF"
+            # libxml2 enables avifenc's gain-map-from-JPEG conversion and is
+            # required by avifgainmaputil (the HDR gain-map tool, shipped as the
+            # third applet). libxml2.a references iconv; on darwin that is folded
+            # in via -liconv (see postPatch + buildInputs above).
+            "-DAVIF_LIBXML2=SYSTEM"
             "-DAVIF_BUILD_TESTS=OFF"
           ];
           doCheck = false;
@@ -129,7 +142,9 @@
       # Linux pkgsStatic links libstdc++ statically already. darwin: the C++
       # codec libs (aom/libyuv) pull `-lc++` → /usr/lib/libc++.1.dylib, which
       # the unpins darwin allowlist rejects; fold libc++ in statically (same
-      # branch as vpx/srt/x265/chafa).
+      # branch as vpx/srt/x265/chafa). (libxml2.a's iconv dep is folded into the
+      # cmake app link itself — see the -liconv injection in mkAvifApps — so it
+      # rides the reused link.txt and needs nothing here.)
       build = pkgs:
         let sp = pkgs.pkgsStatic; in
         mk pkgs sp (pkgs.lib.optionalAttrs sp.stdenv.hostPlatform.isDarwin {
