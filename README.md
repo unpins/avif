@@ -47,5 +47,6 @@ The [Releases](https://github.com/unpins/avif/releases) page has standalone bina
 - **Windows:** `mingw` cross, single `.exe`, no companion DLLs.
 - **macOS:** static `.a` codec chain linked in; only `libSystem` stays dynamic.
 - **Not shipped:** the gdk-pixbuf thumbnailer loader (dynamic pixbuf module, not a CLI). No upstream man pages.
+- **Tests:** libavif's gtest suite isn't built (`AVIF_BUILD_TESTS=OFF`) — it exercises the library, which the same codec chain already proves via [chafa](https://github.com/unpins/chafa)'s decode path; the CLIs are covered by the `avifenc --version` smoke.
 
 The codec chain (`libavif`, `libyuv`, `aom`, `dav1d`, …) is the same one wired up for [chafa](https://github.com/unpins/chafa) in [`nix-lib/native-overlay`](https://github.com/unpins/nix-lib/tree/main/native-overlay); here the apps are turned back on and post-linked into the multicall binary.
