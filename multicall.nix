@@ -87,59 +87,9 @@ let
         $OBJCOPY --redefine-sym "''${up}main=''${up}''${a}_main" "''${OBJ[$a]}"
       done
 
-      # Dispatcher: basename(argv[0]) → <tool>_main, '.exe' stripped, plus a
-      # `${name} <applet> [args]` form so the bare binary stays callable.
-      {
-        echo '#include <string.h>'
-        echo '#include <stdio.h>'
-        for a in "''${apps[@]}"; do echo "int ''${a}_main(int, char **);"; done
-        echo 'struct applet { const char *name; int (*fn)(int, char **); };'
-        echo 'static const struct applet applets[] = {'
-        for a in "''${apps[@]}"; do echo "    {\"$a\", ''${a}_main},"; done
-        cat <<'CBODY'
-    {0, 0}
-};
-static void copy_basename(char *dst, size_t cap, const char *src) {
-    const char *p = src, *s;
-    s = strrchr(p, '/'); if (s) p = s + 1;
-#ifdef _WIN32
-    s = strrchr(p, '\\'); if (s) p = s + 1;
-#endif
-    size_t n = strlen(p); if (n >= cap) n = cap - 1;
-    memcpy(dst, p, n); dst[n] = 0;
-    if (n > 4 && strcmp(dst + n - 4, ".exe") == 0) dst[n - 4] = 0;
-}
-CBODY
-        cat <<CBODY
-static int usage(const char *a0) {
-    fprintf(stderr, "${name}: multicall binary; usage: %s <applet> [args]\n", a0);
-    fprintf(stderr, "applets:");
-    for (const struct applet *a = applets; a->name; a++)
-        fprintf(stderr, " %s", a->name);
-    fprintf(stderr, "\n");
-    return 1;
-}
-int main(int argc, char **argv) {
-    char base[64];
-    const char *a0 = (argc > 0 && argv[0]) ? argv[0] : "${name}";
-    copy_basename(base, sizeof base, a0);
-    /* Invoked under an applet name (an argv[0] shim) -> run it directly. */
-    for (const struct applet *a = applets; a->name; a++)
-        if (strcmp(base, a->name) == 0) return a->fn(argc, argv);
-    /* Invoked as the multicall binary under ANY other name -- its own
-       "${name}", a full path, or a copy/rename like CI's smoke.exe -> take
-       argv[1] as the applet. (Keying only on "${name}" would reject the
-       renamed-binary smoke test, which is why the other multicall packages
-       had to drop their smoke entirely.) */
-    if (argc < 2) return usage(a0);
-    copy_basename(base, sizeof base, argv[1]);
-    for (const struct applet *a = applets; a->name; a++)
-        if (strcmp(base, a->name) == 0) return a->fn(argc - 1, argv + 1);
-    fprintf(stderr, "${name}: unknown applet '%s'\n", base);
-    return usage(a0);
-}
-CBODY
-      } > multicall/dispatcher.c
+      # Dispatcher (shared canonical generator — see nix-lib
+      # lib.multicallDispatcherC). Reads multicall/apps.list (written above).
+${lib.multicallDispatcherC { inherit name; }}
       $CC -O2 -c -o multicall/dispatcher.o multicall/dispatcher.c
 
       # Reuse the template's link command: splice every NON-template tool's main
