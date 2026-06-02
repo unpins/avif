@@ -11,22 +11,21 @@ Part of the [unpins](https://unpins.org) project — native single-binary builds
 
 ## Usage
 
-`unpin avif` runs avif without installing — run it bare to list its programs:
+Run avif to list its programs:
 
 ```bash
-unpin avif
-```
-
-```
+> unpin avif
 avif is one binary with several programs: avifenc, avifdec, avifgainmaputil
 Run one: avif <program> [args...]
 ```
+
+Run one of its programs:
 
 ```bash
 unpin avif avifenc --version
 ```
 
-Or install onto your PATH (each program becomes its own command):
+To install onto your PATH (each program becomes its own command):
 
 ```bash
 unpin install avif
