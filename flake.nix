@@ -134,6 +134,11 @@
     ulib.mkStandaloneFlake {
       inherit self;
       name = "avif";
+      # gc (function/data-sections + --gc-sections, on by default in nix-lib)
+      # needs pkgsAttr = the real lib so the overlay rebuilds it + the codec
+      # chain (aom/dav1d/libyuv) with section granularity; the multicall link
+      # then prunes the dead paths the three tools can't reach.
+      pkgsAttr = "libavif";
       # Multicall: `avif <applet> [args]` dispatches by argv[0]; the bare
       # binary takes the applet as its first arg. Smoke through that form.
       smoke = [ "avifenc" "--version" ];

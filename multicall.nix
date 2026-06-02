@@ -99,7 +99,7 @@ ${lib.multicallDispatcherC { inherit name; }}
       # mains resolve their avif_apps.a/libavif references off that line.
       splice=""
       for a in "''${apps[@]}"; do [ "$a" = "$tmpl" ] || splice="$splice ''${OBJ[$a]}"; done
-      linkbase="$(sed -E "s| -o (\"?)$tmpl(\.exe)?(\"?)|$splice multicall/dispatcher.o -o multicall/${name}|" "$linktxt") ${extraLinkFlags}"
+      linkbase="$(sed -E "s| -o (\"?)$tmpl(\.exe)?(\"?)|$splice multicall/dispatcher.o -o multicall/${name}|" "$linktxt") ${extraLinkFlags} ${lib.gcSectionsFlag pkgs}"
 
       # Iterative link: each failed attempt names remaining strong duplicates;
       # rename those per-tool and relink. Pure-C mains here, so this normally

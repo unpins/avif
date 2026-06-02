@@ -9,15 +9,28 @@ Standalone build of the [libavif](https://github.com/AOMediaCodec/libavif) comma
 
 Part of the [unpins](https://unpins.org) project — native single-binary builds with no third-party runtime dependencies.
 
-## Installation
+## Usage
 
-Install with [unpin](https://github.com/unpins/unpin):
+`unpin avif` runs avif without installing — run it bare to list its programs:
 
 ```bash
 unpin avif
 ```
 
-This drops `avifenc`, `avifdec` and `avifgainmaputil` on your PATH (they are argv[0] shims into one multicall binary).
+```
+avif is one binary with several programs: avifenc, avifdec, avifgainmaputil
+Run one: avif <program> [args...]
+```
+
+```bash
+unpin avif avifenc --version
+```
+
+Or install onto your PATH (each program becomes its own command):
+
+```bash
+unpin install avif
+```
 
 ## Build locally
 
