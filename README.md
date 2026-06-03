@@ -1,6 +1,6 @@
 # avif
 
-Standalone build of the [libavif](https://github.com/AOMediaCodec/libavif) command-line tools — `avifenc` (encode), `avifdec` (decode) and `avifgainmaputil` (HDR gain-map manipulation) for the AVIF image format.
+Standalone build of the [libavif](https://github.com/AOMediaCodec/libavif) command-line programs for the AVIF image format.
 
 [![CI](https://github.com/unpins/avif/actions/workflows/avif.yml/badge.svg)](https://github.com/unpins/avif/actions)
 ![Linux](https://img.shields.io/badge/Linux-✓-success?logo=linux&logoColor=white)
@@ -11,25 +11,28 @@ Part of the [unpins](https://unpins.org) project — native single-binary builds
 
 ## Usage
 
-Run avif to list its programs:
+Run a program with [unpin](https://github.com/unpins/unpin):
 
 ```bash
-> unpin avif
-avif is one binary with several programs: avifenc, avifdec, avifgainmaputil
-Run one: avif <program> [args...]
+unpin avif avifenc input.png output.avif
+unpin avif avifdec image.avif out.png
 ```
 
-Run one of its programs:
-
-```bash
-unpin avif avifenc --version
-```
-
-To install onto your PATH (each program becomes its own command):
+To install the programs onto your PATH:
 
 ```bash
 unpin install avif
 ```
+
+`unpin install avif` creates the `avifenc`, `avifdec`, and `avifgainmaputil` commands.
+
+## Programs
+
+| command | what it does |
+| --- | --- |
+| `avifenc` | encode to AVIF |
+| `avifdec` | decode AVIF to PNG/Y4M |
+| `avifgainmaputil` | inspect / manipulate HDR gain maps |
 
 ## Build locally
 
