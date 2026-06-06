@@ -57,11 +57,9 @@ The [Releases](https://github.com/unpins/avif/releases) page has standalone bina
 ## Build notes
 
 - **Multicall:** one binary at `bin/avif` carries all three tools; `avifenc` / `avifdec` / `avifgainmaputil` are dispatched by `argv[0]`. Invoke the bare binary as `avif <tool> [args]` too.
-- **Codecs:** AV1 encode via [aom](https://aomedia.googlesource.com/aom/), decode via [dav1d](https://code.videolan.org/videolan/dav1d). Reads/writes PNG, JPEG, and y4m.
+- **Codecs:** AV1 encode via [aom](https://aomedia.googlesource.com/aom/), decode via [dav1d](https://code.videolan.org/videolan/dav1d). Reads/writes PNG, JPEG, and y4m. The codec chain (`libavif`, `libyuv`, `aom`, `dav1d`, …) is the same one [chafa](https://github.com/unpins/chafa) wires up; here the apps are turned back on and post-linked into the multicall binary.
 - **Gain maps:** `avifgainmaputil` and `avifenc`'s gain-map-from-JPEG conversion are on (static `libxml2`).
 - **Windows:** `mingw` cross, single `.exe`, no companion DLLs.
 - **macOS:** static `.a` codec chain linked in; only `libSystem` stays dynamic.
 - **Not shipped:** the gdk-pixbuf thumbnailer loader (dynamic pixbuf module, not a CLI). No upstream man pages.
-- **Tests:** libavif's gtest suite isn't built (`AVIF_BUILD_TESTS=OFF`) — it exercises the library, which the same codec chain already proves via [chafa](https://github.com/unpins/chafa)'s decode path; the CLIs are covered by the `avifenc --version` smoke.
-
-The codec chain (`libavif`, `libyuv`, `aom`, `dav1d`, …) is the same one wired up for [chafa](https://github.com/unpins/chafa) in [`nix-lib/native-overlay`](https://github.com/unpins/nix-lib/tree/main/native-overlay); here the apps are turned back on and post-linked into the multicall binary.
+- **Tests:** libavif's gtest suite isn't built (`AVIF_BUILD_TESTS=OFF`) — it exercises the library, which the same codec chain already proves via chafa's decode path; the CLIs are covered by the `avifenc --version` smoke.
