@@ -1,5 +1,5 @@
 {
-  description = "Standalone build of the AVIF image tools (avifenc / avifdec)";
+  description = "the AVIF image tools (avifenc / avifdec) as a single self-contained binary";
 
   nixConfig = {
     extra-substituters = [ "https://unpins.cachix.org" ];
