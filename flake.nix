@@ -141,7 +141,7 @@
       pkgsAttr = "libavif";
       # Multicall: `avif <applet> [args]` dispatches by argv[0]; the bare
       # binary takes the applet as its first arg. Smoke through that form.
-      smoke = [ "avifenc" "--version" ];
+      smoke = [ "--unpin-program=avifenc" "--version" ];
       smokePattern = "Version:";
 
       # Linux pkgsStatic links libstdc++ statically already. darwin: the C++
