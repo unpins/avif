@@ -48,12 +48,13 @@
             (x: !(builtins.elem (x.pname or x.name or "")
               [ "gdk-pixbuf" "gtest" "make-shell-wrapper-hook" ]));
           # Libs libxml2.a (gain-map path) pulls in that find_package(LibXml2)
-          # does NOT put on the link: darwin's separate static iconv; mingw's
-          # BCryptGenRandom (bcrypt, used for libxml2's hash randomization).
-          # musl folds iconv into libc and has getrandom, so Linux needs nothing.
+          # does NOT put on the link: mingw's BCryptGenRandom (bcrypt, used for
+          # libxml2's hash randomization). musl folds iconv into libc and has
+          # getrandom, so Linux needs nothing; darwin's separate static iconv is
+          # supplied automatically by nix-lib's withDarwinIconv (-liconv on
+          # NIX_LDFLAGS + pkgsStatic.libiconv), appended after libxml2.a.
           xmlExtraLibs =
-            if host.isDarwin then "-liconv"
-            else if host.isMinGW then "-lbcrypt"
+            if host.isMinGW then "-lbcrypt"
             else "";
         in
         p.libavif.overrideAttrs (old: {
@@ -63,12 +64,11 @@
             else (old.nativeBuildInputs or [ ]);
           # darwin: libxml2.a (gain-map path) calls iconv, which lives in a
           # separate static libiconv (musl folds it into libc → Linux needs
-          # nothing). Prepend pkgsStatic.libiconv so the linker sees libiconv.a
-          # ahead of the SDK's libiconv.tbd — `-liconv` then resolves static and
-          # emits no /usr/lib/libiconv.2.dylib load command (same lever as the
-          # unpin CLI; the explicit `-liconv` is injected in postPatch below).
-          buildInputs = lib.optional host.isDarwin p.libiconv
-            ++ dropApps (old.buildInputs or [ ])
+          # nothing). nix-lib's withDarwinIconv prepends pkgsStatic.libiconv to
+          # buildInputs and appends -liconv on every darwin build, so the linker
+          # resolves it static (no /usr/lib/libiconv.2.dylib load command) with
+          # no per-package wiring here.
+          buildInputs = dropApps (old.buildInputs or [ ])
             # mingw: aom.pc `Requires: libvmaf`, and libvmaf.a calls
             # pthread_mutex_*; the cmake apps link then needs winpthreads on the
             # path (`-lpthread`). Adding it lets Findaom.cmake's find_library
