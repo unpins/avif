@@ -88,8 +88,14 @@ let
       done
 
       # Dispatcher (shared canonical generator — see nix-lib
-      # lib.multicallDispatcherC). Reads multicall/apps.list (written above).
-${lib.multicallDispatcherC { inherit name; }}
+      # lib.multicallTableDispatcherC).
+      # The generator reads a TSV `<applet>\t<fn-base>` and calls `<fn-base>_main`;
+      # sanitize exactly as the mains were renamed so the symbols match.
+      while IFS= read -r a; do
+        [ -n "$a" ] || continue
+        printf '%s\t%s\n' "$a" "$(printf '%s' "$a" | tr -c 'A-Za-z0-9_' '_')"
+      done < multicall/apps.list > multicall/applets.list
+${lib.multicallTableDispatcherC { inherit name; }}
       $CC -O2 -c -o multicall/dispatcher.o multicall/dispatcher.c
 
       # Reuse the template's link command: splice every NON-template tool's main
