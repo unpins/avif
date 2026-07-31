@@ -21,22 +21,20 @@
 
       # libavif with apps ON, wired onto a (static) pkgs scope. Codec-chain
       # fixes are a subset of chafa's: libyuv (drops its SHARED target, fails
-      # vanilla under pkgsStatic) everywhere; libjpeg-turbo on riscv (RVV SIMD
-      # helper miscompiles, pulled via the JPEG reader); dav1d on darwin (meson
+      # vanilla under pkgsStatic) everywhere; dav1d on darwin (meson
       # cpu_family='arm64' literal). Each is identity off its gate, so the
       # other targets keep the cache-hit lib. aom (the encoder) needs no fix —
       # chafa already cross-built it on every target via libavif's SYSTEM codec.
-      # `eng` (engine path only): { lto; elf; } — two unpin-llvm adapter stdenvs.
+      # `eng` (engine path only): the unpin-llvm adapter stdenv.
       # On the engine we must defeat the tier-2 wall: libavif's apps link the
       # SYSTEM codec libs, two of which carry C++ (libaom: rate control;
       # libyuv: .cc) built with gcc/libstdc++, which can't resolve against the
       # engine's libc++. Rebuild THOSE two with the engine so their C++ becomes
-      # libc++, matching libavif. libavif itself needs the LTO stdenv (its app
-      # objects must be bitcode for the self-fold module); the codec libs use
-      # the NO-LTO stdenv so their asm SIMD (nasm/intrinsics, can't be bitcode)
-      # stays as plain ELF archives — fine as external depArchives. The pure-C
-      # codec/image libs (dav1d/sharpyuv/webp/png/zlib/jpeg/xml2) stay gcc: C
-      # ABI links cleanly into a libc++ binary, no rebuild needed.
+      # libc++, matching libavif. All of them take the LTO stdenv: nasm/asm
+      # objects simply stay native inside an otherwise-bitcode archive, and the
+      # mega link reads mixed archives fine. The pure-C codec/image libs
+      # (dav1d/sharpyuv/webp/png/zlib/jpeg/xml2) stay gcc: C ABI links cleanly
+      # into a libc++ binary, no rebuild needed.
       mkAvifApps = eng: scope:
         let
           lib = scope.lib;
@@ -45,9 +43,17 @@
             {
               libyuv =
                 let base = ulib.nativeFixes.libyuv prev;
-                in if eng != null then base.override { stdenv = eng.elf; } else base;
+                in if eng != null then base.override { stdenv = eng.lto; } else base;
             } // lib.optionalAttrs (eng != null) {
-              libavif = prev.libavif.override { stdenv = eng.lto; };
+              # Base on the shared nix-lib fix, not raw nixpkgs: on darwin it
+              # patches merge_static_libs.cmake's `if(APPLE)` branch, which
+              # hardcodes `xcrun libtool -static` — absent from the engine's
+              # darwin toolchain (`xcrun: command not found`, exit 127). Our
+              # overrideAttrs below replaces its cmakeFlags (apps back ON) but
+              # CONCATENATES postPatch, so the patch rides along. chafa consumes
+              # libavif the same way; the overlay is not auto-wired, so a
+              # consumer that names `prev.libavif` gets the unpatched one.
+              libavif = (ulib.nativeFixes.libavif prev).override { stdenv = eng.lto; };
               # Engine-rebuilt libaom: avif only consumes libaom.a, but nixpkgs'
               # libaom also builds aom's OWN example CLIs (aomenc/aomdec) — which
               # link libvmaf, an external gcc/libstdc++ lib that can't resolve
@@ -56,7 +62,7 @@
               # libaom.a itself) carry no libvmaf reference; keep ENABLE_EXAMPLES
               # so nixpkgs' `bin` output stays populated (disabling them would
               # leave `bin` empty → "failed to produce output path").
-              libaom = (prev.libaom.override { stdenv = eng.elf; }).overrideAttrs (o: {
+              libaom = (prev.libaom.override { stdenv = eng.lto; }).overrideAttrs (o: {
                 cmakeFlags = (o.cmakeFlags or [ ]) ++ [
                   "-DENABLE_TESTS=OFF"
                   "-DCONFIG_TUNE_VMAF=0"
@@ -71,8 +77,6 @@
               # this scope: the overlay propagates to the build-time docbook
               # toolchain (asciidoc/a2x), which NEEDS XML catalogs, breaking it
               # and rebuilding the world. Left as-is, matching upstream.
-            } // lib.optionalAttrs host.isRiscV {
-              libjpeg = ulib.nativeFixes."libjpeg-turbo" prev;
             } // lib.optionalAttrs host.isDarwin {
               dav1d = ulib.nativeFixes.dav1d prev;
             });
@@ -170,19 +174,19 @@
           ({ pkgs = scope; libavifApps = mkAvifApps null scope; } // extra);
 
       # Engine path (native Linux): build the two C++ codec libs + libavif with
-      # the unpin-llvm adapter so the whole link is libc++. Two stdenvs (lto for
-      # libavif's bitcode apps, no-lto ELF for the asm-carrying codec libs).
+      # the unpin-llvm adapter so the whole link is libc++, full-LTO throughout.
       engStdenvs = pkgs:
         let sp = pkgs.pkgsStatic;
-            mkEng = lto: ulib.unpinAdapterStdenv {
-              inherit pkgs;
-              target = sp.stdenv.hostPlatform.config;
-              native = pkgs.stdenv.buildPlatform.system == pkgs.stdenv.hostPlatform.system;
-              cxx = true;
-              inherit lto;
-              captureLinks = lto;
-            };
-        in { lto = mkEng true; elf = mkEng false; };
+        in {
+          lto = ulib.unpinAdapterStdenv {
+            inherit pkgs;
+            target = sp.stdenv.hostPlatform.config;
+            native = pkgs.stdenv.buildPlatform.system == pkgs.stdenv.hostPlatform.system;
+            cxx = true;
+            lto = true;
+            captureLinks = true;
+          };
+        };
     in
     ulib.mkStandaloneFlake {
       inherit self;
@@ -212,20 +216,14 @@
         requires.cxx = true;
       };
 
-      # Linux pkgsStatic links libstdc++ statically already. darwin: the C++
-      # codec libs (aom/libyuv) pull `-lc++` → /usr/lib/libc++.1.dylib, which
-      # the unpins darwin allowlist rejects; fold libc++ in statically (same
-      # branch as vpx/srt/x265/chafa). (libxml2.a's iconv dep is folded into the
-      # cmake app link itself — see the -liconv injection in mkAvifApps — so it
-      # rides the reused link.txt and needs nothing here.)
-      build = pkgs:
-        if pkgs.stdenv.hostPlatform.isLinux
-        then mkAvifApps (engStdenvs pkgs) pkgs.pkgsStatic   # engine path → selfFold
-        else
-          let sp = pkgs.pkgsStatic; in
-          mk pkgs sp (pkgs.lib.optionalAttrs sp.stdenv.hostPlatform.isDarwin {
-            extraLinkFlags = "-nostdlib++ ${sp.libcxx}/lib/libc++.a ${sp.libcxx}/lib/libc++abi.a";
-          });
+      # Linux AND darwin go through the engine self-fold. darwin used to take
+      # multicall.nix, but the engine reaches darwin too, so its objects are
+      # bitcode and the fold's `llvm-objcopy --redefine-sym` cannot read them
+      # ("not recognized as a valid object file"). requires.cxx folds libc++
+      # statically, which also settles the /usr/lib/libc++.1.dylib the darwin
+      # allowlist rejects. (libxml2.a's iconv dep is folded into the cmake app
+      # link itself — see the -liconv injection in mkAvifApps.)
+      build = pkgs: mkAvifApps (engStdenvs pkgs) pkgs.pkgsStatic;
 
       # mingw cross: -all-static folds the C++/thread runtime into the .exe so
       # no libstdc++-6 / libgcc_s / libwinpthread DLLs ride alongside.
