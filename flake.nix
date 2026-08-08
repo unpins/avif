@@ -11,8 +11,8 @@
   # libavif ships its CLI tools (avifenc / avifdec / avifgainmaputil) as
   # "apps". The shared nix-lib overlay used by chafa builds the library
   # decode-only (apps off — chafa just wants libavif.a to read AVIF); here we
-  # turn the apps back on, keep the aom encoder, and post-link all three into a
-  # single `avif` binary (multicall.nix). The image-codec chain
+  # turn the apps back on, keep the aom encoder, and let nix-lib self-fold all
+  # three into a single `avif` binary. The image-codec chain
   # (libyuv/aom/dav1d/sharpyuv + png/jpeg/zlib/webp/xml2) is the SAME one chafa
   # proved across all nine targets, so the deps are cache hits.
   outputs = { self, unpins-lib }:
@@ -169,10 +169,6 @@
           '';
         });
 
-      mk = pkgs: scope: extra:
-        import ./multicall.nix { lib = pkgs.lib // ulib; }
-          ({ pkgs = scope; libavifApps = mkAvifApps null scope; } // extra);
-
       # Engine path (native Linux): build the two C++ codec libs + libavif with
       # the unpin-llvm adapter so the whole link is libc++, full-LTO throughout.
       engStdenvs = pkgs:
@@ -205,9 +201,10 @@
       # bitcode and avifenc/avifdec/avifgainmaputil self-fold into one `avif`.
       # The C++ comes from libavif (engine→libc++) AND the SYSTEM codec libs
       # libaom/libyuv (rebuilt with the engine → libc++); avifgainmaputil's main
-      # is C++ → requires.cxx. darwin/windows keep the objcopy fold below.
+      # is C++ → requires.cxx.
       engine = "unpin-llvm";
       multicall = {
+        windows = true;
         programs = [
           { name = "avifenc"; }
           { name = "avifdec"; }
@@ -216,21 +213,17 @@
         requires.cxx = true;
       };
 
-      # Linux AND darwin go through the engine self-fold. darwin used to take
-      # multicall.nix, but the engine reaches darwin too, so its objects are
-      # bitcode and the fold's `llvm-objcopy --redefine-sym` cannot read them
-      # ("not recognized as a valid object file"). requires.cxx folds libc++
-      # statically, which also settles the /usr/lib/libc++.1.dylib the darwin
-      # allowlist rejects. (libxml2.a's iconv dep is folded into the cmake app
-      # link itself — see the -liconv injection in mkAvifApps.)
+      # Linux AND darwin go through the engine self-fold. requires.cxx folds
+      # libc++ statically, which also settles the /usr/lib/libc++.1.dylib the
+      # darwin allowlist rejects. (libxml2.a's iconv dep is folded into the
+      # cmake app link itself — see the -liconv injection in mkAvifApps.)
       build = pkgs: mkAvifApps (engStdenvs pkgs) pkgs.pkgsStatic;
 
-      # mingw cross: -all-static folds the C++/thread runtime into the .exe so
-      # no libstdc++-6 / libgcc_s / libwinpthread DLLs ride alongside.
-      windowsBuild = pkgs:
-        let cross = ulib.mingwStaticCross pkgs; in
-        mk pkgs cross {
-          extraLinkFlags = "-static -static-libgcc -static-libstdc++";
-        };
+      # mingw cross. `eng` stays null here on purpose: multicall.windows = true
+      # already swaps the whole mingwW64 set onto the engine adapter, so libyuv/
+      # libaom/libavif are engine-built (libc++, LTO) without a per-package
+      # `.override { stdenv = … }` — the native path needs those overrides only
+      # because its swap is scoped to pkgsStatic.
+      windowsBuild = pkgs: mkAvifApps null (ulib.mingwStaticCross pkgs);
     };
 }
