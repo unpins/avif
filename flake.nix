@@ -206,9 +206,10 @@
       multicall = {
         windows = true;
         programs = [
-          { name = "avifenc"; }
-          { name = "avifdec"; }
-          { name = "avifgainmaputil"; }
+          # libavif installs no man pages at all; `--help` is the whole doc.
+          { name = "avifenc"; noMan = true; }
+          { name = "avifdec"; noMan = true; }
+          { name = "avifgainmaputil"; noMan = true; }
         ];
         requires.cxx = true;
       };
