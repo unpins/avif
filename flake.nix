@@ -187,15 +187,20 @@
     ulib.mkStandaloneFlake {
       inherit self;
       name = "avif";
-      # gc (function/data-sections + --gc-sections, on by default in nix-lib)
-      # needs pkgsAttr = the real lib so the overlay rebuilds it + the codec
-      # chain (aom/dav1d/libyuv) with section granularity; the multicall link
-      # then prunes the dead paths the three tools can't reach.
+      # There is no `avif` in nixpkgs -- the programs live in `libavif`. The
+      # windows target builds pkgsCross.mingwW64.<pkgsAttr> straight from this
+      # name (linux has its own `build` below and ignores it).
+      # It used to be here for the --gc-sections overlay too, which rebuilt the
+      # codec chain with section granularity; that overlay no longer runs, the
+      # engine replaces the stdenv and full LTO prunes instead.
       pkgsAttr = "libavif";
-      # Multicall: `avif <applet> [args]` dispatches by argv[0]; the bare
-      # binary takes the applet as its first arg. Smoke through that form.
+      # A program is selected with --unpin-program=; the bare binary prints the
+      # list. The pattern names the codecs on purpose -- a libavif linked
+      # against no codec at all still prints "Version: 1.4.1 ()" and would pass
+      # a bare "Version:", while this package is the codec chain. avifenc's
+      # banner reports what is actually compiled in.
       smoke = [ "--unpin-program=avifenc" "--version" ];
-      smokePattern = "Version:";
+      smokePattern = "Version: .*dav1d \\[dec\\]:.*aom \\[enc/dec\\]:";
 
       # Engine + bitcode self-fold (native Linux): libavif (apps on) compiles to
       # bitcode and avifenc/avifdec/avifgainmaputil self-fold into one `avif`.
