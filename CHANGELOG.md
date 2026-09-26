@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.1-2] - 2026-09-26
+
 ### Fixed
 
 - The binary no longer carries `/nix/store/…-libxml2-…/etc/xml/catalog`, the
