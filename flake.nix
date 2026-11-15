@@ -69,9 +69,11 @@
         in
         p.libavif.overrideAttrs (old: {
           pname = "avif-apps";
+          # pandoc renders upstream's avifenc.1/avifdec.1 (AVIF_BUILD_MAN_PAGES).
           nativeBuildInputs =
-            if host.isMinGW then dropApps (old.nativeBuildInputs or [ ])
-            else (old.nativeBuildInputs or [ ]);
+            (if host.isMinGW then dropApps (old.nativeBuildInputs or [ ])
+             else (old.nativeBuildInputs or [ ]))
+            ++ [ scope.buildPackages.pandoc ];
           # darwin: libxml2.a (gain-map path) calls iconv, which lives in a
           # separate static libiconv (musl folds it into libc → Linux needs
           # nothing). nix-lib's withDarwinIconv prepends pkgsStatic.libiconv to
@@ -92,6 +94,7 @@
             "-DAVIF_CODEC_AOM=SYSTEM"      # encoder (avifenc)
             "-DAVIF_CODEC_DAV1D=SYSTEM"    # decoder (avifdec)
             "-DAVIF_BUILD_APPS=ON"
+            "-DAVIF_BUILD_MAN_PAGES=ON"
             "-DAVIF_BUILD_GDK_PIXBUF=OFF"
             "-DAVIF_LIBSHARPYUV=SYSTEM"
             # libxml2 enables avifenc's gain-map-from-JPEG conversion and is
@@ -147,9 +150,9 @@
       multicall = {
         windows = true;
         programs = [
-          # libavif installs no man pages at all; `--help` is the whole doc.
-          { name = "avifenc"; noMan = true; }
-          { name = "avifdec"; noMan = true; }
+          { name = "avifenc"; }
+          { name = "avifdec"; }
+          # Upstream writes no page for it; `--help` is the whole doc.
           { name = "avifgainmaputil"; noMan = true; }
         ];
         requires.cxx = true;
