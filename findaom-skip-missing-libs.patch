@@ -1,0 +1,20 @@
+Findaom.cmake turns each library in aom.pc's Libs.private into a
+find_library() and links the result. On mingw there is no standalone
+libm (math lives in the C runtime), so the `-lm` lookup yields
+`_aom_dep_lib_m-NOTFOUND` and the programs tried to link
+`-l_aom_dep_lib_m-NOTFOUND`. Link only what was found; where libm
+exists nothing changes.
+
+--- a/cmake/Modules/Findaom.cmake
++++ b/cmake/Modules/Findaom.cmake
+@@ -46,7 +46,9 @@
+         # Add absolute paths to libraries
+         foreach(_lib ${_AOM_PC_LIBRARIES})
+             find_library(_aom_dep_lib_${_lib} ${_lib} HINTS ${_AOM_STATIC_LIBRARY_DIRS})
+-            target_link_libraries(aom INTERFACE ${_aom_dep_lib_${_lib}})
++            if(_aom_dep_lib_${_lib})
++    target_link_libraries(aom INTERFACE ${_aom_dep_lib_${_lib}})
++endif()
+         endforeach()
+     else()
+         add_library(aom SHARED IMPORTED GLOBAL)

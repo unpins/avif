@@ -66,15 +66,6 @@
                ++ lib.optional (!runTests) "gtest")));
           # libavif's gtest suite, where the build can run it.
           runTests = scope.stdenv.buildPlatform.canExecute host;
-          # Libs libxml2.a (gain-map path) pulls in that find_package(LibXml2)
-          # does NOT put on the link: mingw's BCryptGenRandom (bcrypt, used for
-          # libxml2's hash randomization). musl folds iconv into libc and has
-          # getrandom, so Linux needs nothing; darwin's separate static iconv is
-          # supplied automatically by nix-lib's withDarwinIconv (-liconv on
-          # NIX_LDFLAGS + pkgsStatic.libiconv), appended after libxml2.a.
-          xmlExtraLibs =
-            if host.isMinGW then "-lbcrypt"
-            else "";
         in
         p.libavif.overrideAttrs (old: {
           pname = "avif-apps";
@@ -94,27 +85,8 @@
             # loop resolve pthread into aom's INTERFACE link, after libvmaf.a.
             ++ lib.optionals host.isMinGW [ p.windows.pthreads ];
           propagatedBuildInputs = dropApps (old.propagatedBuildInputs or [ ]);
-          postPatch = (old.postPatch or "") + ''
-            # Findaom.cmake reflects aom.pc's `Libs.private: -lm` into a
-            # find_library(_aom_dep_lib_m m). On mingw there is no standalone
-            # libm (math lives in the C runtime), so the lookup yields the
-            # literal `_aom_dep_lib_m-NOTFOUND` and the apps try to link
-            # `-l_aom_dep_lib_m-NOTFOUND`. Guard the interface-link on a
-            # successful find (no-op on platforms where libm exists).
-            substituteInPlace cmake/Modules/Findaom.cmake \
-              --replace-fail 'target_link_libraries(aom INTERFACE ''${_aom_dep_lib_''${_lib}})' \
-                             'if(_aom_dep_lib_''${_lib})
-            target_link_libraries(aom INTERFACE ''${_aom_dep_lib_''${_lib}})
-        endif()'
-          '' + lib.optionalString (xmlExtraLibs != "") ''
-            # Append libxml2.a's extra deps after LibXml2 in avif_apps' link so
-            # they propagate to every app that pulls libxml2.a (darwin: -liconv
-            # binds static via pkgsStatic.libiconv on buildInputs, no dylib load;
-            # mingw: -lbcrypt resolves BCryptGenRandom from the win32 sysroot).
-            substituteInPlace CMakeLists.txt \
-              --replace-fail 'target_link_libraries(avif_apps''${suffix} PRIVATE LibXml2::LibXml2)' \
-                             'target_link_libraries(avif_apps''${suffix} PRIVATE LibXml2::LibXml2 ${xmlExtraLibs})'
-          '';
+          patches = (old.patches or [ ]) ++ [ ./findaom-skip-missing-libs.patch ]
+            ++ lib.optional host.isMinGW ./mingw-apps-bcrypt.patch;
           cmakeFlags = [
             "-DBUILD_SHARED_LIBS=OFF"
             "-DAVIF_CODEC_AOM=SYSTEM"      # encoder (avifenc)

@@ -1,0 +1,16 @@
+libavif's programs link libxml2.a (gain-map support), whose hash
+randomization calls BCryptGenRandom, but find_package(LibXml2) does not
+put its dependencies on the link: the Windows build failed on an
+undefined BCryptGenRandom. Add -lbcrypt. Windows only.
+
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -663,7 +663,7 @@
+             target_link_libraries(avif_apps${suffix} PRIVATE m)
+         endif()
+         if(AVIF_ENABLE_JPEG_GAIN_MAP_CONVERSION)
+-            target_link_libraries(avif_apps${suffix} PRIVATE LibXml2::LibXml2)
++            target_link_libraries(avif_apps${suffix} PRIVATE LibXml2::LibXml2 -lbcrypt)
+         endif()
+         target_include_directories(avif_apps${suffix} INTERFACE apps/shared)
+         # In GitHub CI's macos-latest os image, /usr/local/include has not only the headers of libpng
