@@ -54,20 +54,7 @@
               # libavif the same way; the overlay is not auto-wired, so a
               # consumer that names `prev.libavif` gets the unpatched one.
               libavif = (ulib.nativeFixes.libavif prev).override { stdenv = eng.lto; };
-              # Engine-rebuilt libaom: avif only consumes libaom.a, but nixpkgs'
-              # libaom also builds aom's OWN example CLIs (aomenc/aomdec) — which
-              # link libvmaf, an external gcc/libstdc++ lib that can't resolve
-              # against the engine's libc++ (the std::basic_filebuf wall). Just
-              # disable the optional VMAF tuning so those example links (and
-              # libaom.a itself) carry no libvmaf reference; keep ENABLE_EXAMPLES
-              # so nixpkgs' `bin` output stays populated (disabling them would
-              # leave `bin` empty → "failed to produce output path").
-              libaom = (prev.libaom.override { stdenv = eng.lto; }).overrideAttrs (o: {
-                cmakeFlags = (o.cmakeFlags or [ ]) ++ [
-                  "-DENABLE_TESTS=OFF"
-                  "-DCONFIG_TUNE_VMAF=0"
-                ];
-              });
+              libaom = prev.libaom.override { stdenv = eng.lto; };
               # NB: libavif's gain-map path links libxml2.a, which bakes its
               # default catalog path (…-libxml2/etc/xml/catalog) into a .data
               # string → one retained runtime store-ref. It is benign (a fallback
