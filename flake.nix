@@ -75,7 +75,10 @@
           # find_package(TIFF). Gated drops keep native/darwin cache hits.
           dropApps = lib.filter
             (x: !(builtins.elem (x.pname or x.name or "")
-              [ "gdk-pixbuf" "gtest" "make-shell-wrapper-hook" ]));
+              ([ "gdk-pixbuf" "make-shell-wrapper-hook" ]
+               ++ lib.optional (!runTests) "gtest")));
+          # libavif's gtest suite, where the build can run it.
+          runTests = scope.stdenv.buildPlatform.canExecute host;
           # Libs libxml2.a (gain-map path) pulls in that find_package(LibXml2)
           # does NOT put on the link: mingw's BCryptGenRandom (bcrypt, used for
           # libxml2's hash randomization). musl folds iconv into libc and has
@@ -137,9 +140,10 @@
             # third applet). libxml2.a references iconv; on darwin that is folded
             # in via -liconv (see postPatch + buildInputs above).
             "-DAVIF_LIBXML2=SYSTEM"
-            "-DAVIF_BUILD_TESTS=OFF"
-          ];
-          doCheck = false;
+          ] ++ (if runTests
+                then [ "-DAVIF_BUILD_TESTS=ON" "-DAVIF_GTEST=SYSTEM" ]
+                else [ "-DAVIF_BUILD_TESTS=OFF" ]);
+          doCheck = runTests;
           # The loader-cache + thumbnailer wrapper postInstall is meaningless
           # without the gdk-pixbuf module; the apps install themselves via the
           # cmake install rule.
