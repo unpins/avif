@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `avifenc -a tune=vmaf` works on Linux and macOS, as it already did on
+  Windows (give it the model with `-a vmaf-model-path=`).
+- Man pages for `avifenc` and `avifdec`: `unpin man avif avifenc`.
+
 ## [1.4.1-2] - 2026-09-26
 
 ### Fixed

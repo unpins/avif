@@ -31,8 +31,14 @@ unpin install avif
 | command | what it does |
 | --- | --- |
 | `avifenc` | encode to AVIF |
-| `avifdec` | decode AVIF to PNG/Y4M |
+| `avifdec` | decode AVIF to PNG/JPEG/Y4M |
 | `avifgainmaputil` | inspect / manipulate HDR gain maps |
+
+## Man pages
+
+`avifenc.1` and `avifdec.1` are embedded in the binary — read one with
+`unpin man avif <program>`, e.g. `unpin man avif avifenc`. `avifgainmaputil`
+has no upstream page; `avifgainmaputil --help` is its documentation.
 
 ## Build locally
 
@@ -56,9 +62,9 @@ The [Releases](https://github.com/unpins/avif/releases) page has standalone bina
 
 ## Build notes
 
-- **All three programs, one binary.** `unpin install avif` gives you `avifenc`, `avifdec` and `avifgainmaputil` as ordinary commands; without installing, pick one with `--unpin-program=avifenc`.
-- **Codecs:** AV1 encode via [aom](https://aomedia.googlesource.com/aom/), decode via [dav1d](https://code.videolan.org/videolan/dav1d). Reads/writes PNG, JPEG, and y4m. The codec chain (`libavif`, `libyuv`, `aom`, `dav1d`, …) is the same one [chafa](https://github.com/unpins/chafa) wires up; here the apps are turned back on and post-linked into the multicall binary.
+- **Codecs:** AV1 encode via [aom](https://aomedia.googlesource.com/aom/), decode via [dav1d](https://code.videolan.org/videolan/dav1d). Reads/writes PNG, JPEG, and y4m.
+- **`avifenc -a tune=vmaf`** needs `-a vmaf-model-path=<vmaf_v0.6.1.json>`: aom looks for the model in `/usr/local/share/model` otherwise.
 - **Gain maps:** `avifgainmaputil` and `avifenc`'s gain-map-from-JPEG conversion are on (static `libxml2`).
-- **Windows:** built with mingw-w64.
-- **Not shipped:** the gdk-pixbuf thumbnailer loader (dynamic pixbuf module, not a CLI). No upstream man pages.
-- **Tests:** libavif's gtest suite isn't built (`AVIF_BUILD_TESTS=OFF`) — it exercises the library, which the same codec chain already proves via chafa's decode path; the CLIs are covered by the `avifenc --version` smoke.
+- **Windows:** mingw.
+- **Not shipped:** the gdk-pixbuf thumbnailer loader (dynamic pixbuf module, not a CLI).
+- **Tests:** libavif's gtest suite runs as part of every build that can execute the result.
