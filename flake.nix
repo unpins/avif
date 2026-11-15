@@ -8,23 +8,14 @@
 
   inputs.unpins-lib.url = "github:unpins/nix-lib";
 
-  # libavif ships its CLI tools (avifenc / avifdec / avifgainmaputil) as
-  # "apps". The shared nix-lib overlay used by chafa builds the library
-  # decode-only (apps off — chafa just wants libavif.a to read AVIF); here we
-  # turn the apps back on, keep the aom encoder, and let nix-lib self-fold all
-  # three into a single `avif` binary. The image-codec chain
-  # (libyuv/aom/dav1d/sharpyuv + png/jpeg/zlib/webp/xml2) is the SAME one chafa
-  # proved across all nine targets, so the deps are cache hits.
+  # libavif's programs (avifenc, avifdec, avifgainmaputil) are built from
+  # nixpkgs' libavif with its apps on and folded into one `avif` binary.
   outputs = { self, unpins-lib }:
     let
       ulib = unpins-lib.lib;
 
-      # libavif with apps ON, wired onto a (static) pkgs scope. Codec-chain
-      # fixes are a subset of chafa's: libyuv (drops its SHARED target, fails
-      # vanilla under pkgsStatic) everywhere; dav1d on darwin (meson
-      # cpu_family='arm64' literal). Each is identity off its gate, so the
-      # other targets keep the cache-hit lib. aom (the encoder) needs no fix —
-      # chafa already cross-built it on every target via libavif's SYSTEM codec.
+      # libavif with the apps on, over a static pkgs scope. libyuv everywhere
+      # and dav1d on darwin take nix-lib's fixes.
       mkAvifApps = scope:
         let
           lib = scope.lib;
@@ -42,24 +33,14 @@
               # libavif the same way; the overlay is not auto-wired, so a
               # consumer that names `prev.libavif` gets the unpatched one.
               libavif = ulib.nativeFixes.libavif prev;
-              # NB: libavif's gain-map path links libxml2.a, which bakes its
-              # default catalog path (…-libxml2/etc/xml/catalog) into a .data
-              # string → one retained runtime store-ref. It is benign (a fallback
-              # string; the binary runs fine and XML_CATALOG_FILES overrides it)
-              # and PRE-EXISTING (the off-engine avif links the same libxml2).
-              # Do NOT try to drop it by rebuilding libxml2 --without-catalog in
-              # this scope: the overlay propagates to the build-time docbook
-              # toolchain (asciidoc/a2x), which NEEDS XML catalogs, breaking it
-              # and rebuilding the world. Left as-is, matching upstream.
             } // lib.optionalAttrs host.isDarwin {
               dav1d = ulib.nativeFixes.dav1d prev;
             });
-          # nixpkgs' libavif pulls gdk-pixbuf (the loader module we disable),
-          # gtest (tests, off) and — on mingw — make-shell-wrapper-hook (spliced
-          # to a mingw bash that can't cross-compile: `unknown type name
-          # 'sigset_t'`). None are needed for the apps, so drop them. gdk-pixbuf
-          # also transitively drags libtiff whose static CMake export breaks
-          # find_package(TIFF). Gated drops keep native/darwin cache hits.
+          # Inputs the programs do not use: gdk-pixbuf (the loader module, off),
+          # gtest where the suite does not run, and on mingw
+          # make-shell-wrapper-hook (spliced to a mingw bash that cannot
+          # cross-compile). Only mingw filters nativeBuildInputs, so the other
+          # targets keep nixpkgs' list there.
           dropApps = lib.filter
             (x: !(builtins.elem (x.pname or x.name or "")
               ([ "gdk-pixbuf" "make-shell-wrapper-hook" ]
@@ -99,8 +80,7 @@
             "-DAVIF_LIBSHARPYUV=SYSTEM"
             # libxml2 enables avifenc's gain-map-from-JPEG conversion and is
             # required by avifgainmaputil (the HDR gain-map tool, shipped as the
-            # third applet). libxml2.a references iconv; on darwin that is folded
-            # in via -liconv (see postPatch + buildInputs above).
+            # third applet). Its iconv on darwin: see above.
             "-DAVIF_LIBXML2=SYSTEM"
           ] ++ (if runTests
                 then [ "-DAVIF_BUILD_TESTS=ON" "-DAVIF_GTEST=SYSTEM" ]
@@ -126,12 +106,7 @@
     ulib.mkStandaloneFlake {
       inherit self;
       name = "avif";
-      # There is no `avif` in nixpkgs -- the programs live in `libavif`. The
-      # windows target builds pkgsCross.mingwW64.<pkgsAttr> straight from this
-      # name (linux has its own `build` below and ignores it).
-      # It used to be here for the --gc-sections overlay too, which rebuilt the
-      # codec chain with section granularity; that overlay no longer runs, the
-      # engine replaces the stdenv and full LTO prunes instead.
+      # There is no `avif` in nixpkgs; the programs live in `libavif`.
       pkgsAttr = "libavif";
       # A program is selected with --unpin-program=; the bare binary prints the
       # list. The pattern names the codecs on purpose -- a libavif linked
@@ -141,11 +116,9 @@
       smoke = [ "--unpin-program=avifenc" "--version" ];
       smokePattern = "Version: .*dav1d \\[dec\\]:.*aom \\[enc/dec\\]:";
 
-      # Engine + bitcode self-fold (native Linux): libavif (apps on) compiles to
-      # bitcode and avifenc/avifdec/avifgainmaputil self-fold into one `avif`.
-      # The C++ comes from libavif (engine→libc++) AND the SYSTEM codec libs
-      # libaom/libyuv (rebuilt with the engine → libc++); avifgainmaputil's main
-      # is C++ → requires.cxx.
+      # The engine builds libavif and its C++ codec libs (libaom, libyuv)
+      # against its own libc++, Windows included; avifgainmaputil's main is
+      # C++ too, hence requires.cxx.
       engine = "unpin-llvm";
       multicall = {
         windows = true;
@@ -160,8 +133,7 @@
 
       # Linux AND darwin go through the engine self-fold. requires.cxx folds
       # libc++ statically, which also settles the /usr/lib/libc++.1.dylib the
-      # darwin allowlist rejects. (libxml2.a's iconv dep is folded into the
-      # cmake app link itself — see the -liconv injection in mkAvifApps.)
+      # darwin allowlist rejects.
       build = pkgs: mkAvifApps pkgs.pkgsStatic;
 
       windowsBuild = pkgs: mkAvifApps (ulib.mingwStaticCross pkgs);
