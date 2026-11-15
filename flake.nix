@@ -25,26 +25,14 @@
       # cpu_family='arm64' literal). Each is identity off its gate, so the
       # other targets keep the cache-hit lib. aom (the encoder) needs no fix —
       # chafa already cross-built it on every target via libavif's SYSTEM codec.
-      # `eng` (engine path only): the unpin-llvm adapter stdenv.
-      # On the engine we must defeat the tier-2 wall: libavif's apps link the
-      # SYSTEM codec libs, two of which carry C++ (libaom: rate control;
-      # libyuv: .cc) built with gcc/libstdc++, which can't resolve against the
-      # engine's libc++. Rebuild THOSE two with the engine so their C++ becomes
-      # libc++, matching libavif. All of them take the LTO stdenv: nasm/asm
-      # objects simply stay native inside an otherwise-bitcode archive, and the
-      # mega link reads mixed archives fine. The pure-C codec/image libs
-      # (dav1d/sharpyuv/webp/png/zlib/jpeg/xml2) stay gcc: C ABI links cleanly
-      # into a libc++ binary, no rebuild needed.
-      mkAvifApps = eng: scope:
+      mkAvifApps = scope:
         let
           lib = scope.lib;
           host = scope.stdenv.hostPlatform;
           p = scope.extend (final: prev:
             {
-              libyuv =
-                let base = ulib.nativeFixes.libyuv prev;
-                in if eng != null then base.override { stdenv = eng.lto; } else base;
-            } // lib.optionalAttrs (eng != null) {
+              libyuv = ulib.nativeFixes.libyuv prev;
+            } // lib.optionalAttrs (!host.isMinGW) {
               # Base on the shared nix-lib fix, not raw nixpkgs: on darwin it
               # patches merge_static_libs.cmake's `if(APPLE)` branch, which
               # hardcodes `xcrun libtool -static` — absent from the engine's
@@ -53,8 +41,7 @@
               # CONCATENATES postPatch, so the patch rides along. chafa consumes
               # libavif the same way; the overlay is not auto-wired, so a
               # consumer that names `prev.libavif` gets the unpatched one.
-              libavif = (ulib.nativeFixes.libavif prev).override { stdenv = eng.lto; };
-              libaom = prev.libaom.override { stdenv = eng.lto; };
+              libavif = ulib.nativeFixes.libavif prev;
               # NB: libavif's gain-map path links libxml2.a, which bakes its
               # default catalog path (…-libxml2/etc/xml/catalog) into a .data
               # string → one retained runtime store-ref. It is benign (a fallback
@@ -160,20 +147,6 @@
           '';
         });
 
-      # Engine path (native Linux): build the two C++ codec libs + libavif with
-      # the unpin-llvm adapter so the whole link is libc++, full-LTO throughout.
-      engStdenvs = pkgs:
-        let sp = pkgs.pkgsStatic;
-        in {
-          lto = ulib.unpinAdapterStdenv {
-            inherit pkgs;
-            target = sp.stdenv.hostPlatform.config;
-            native = pkgs.stdenv.buildPlatform.system == pkgs.stdenv.hostPlatform.system;
-            cxx = true;
-            lto = true;
-            captureLinks = true;
-          };
-        };
     in
     ulib.mkStandaloneFlake {
       inherit self;
@@ -214,13 +187,8 @@
       # libc++ statically, which also settles the /usr/lib/libc++.1.dylib the
       # darwin allowlist rejects. (libxml2.a's iconv dep is folded into the
       # cmake app link itself — see the -liconv injection in mkAvifApps.)
-      build = pkgs: mkAvifApps (engStdenvs pkgs) pkgs.pkgsStatic;
+      build = pkgs: mkAvifApps pkgs.pkgsStatic;
 
-      # mingw cross. `eng` stays null here on purpose: multicall.windows = true
-      # already swaps the whole mingwW64 set onto the engine adapter, so libyuv/
-      # libaom/libavif are engine-built (libc++, LTO) without a per-package
-      # `.override { stdenv = … }` — the native path needs those overrides only
-      # because its swap is scoped to pkgsStatic.
-      windowsBuild = pkgs: mkAvifApps null (ulib.mingwStaticCross pkgs);
+      windowsBuild = pkgs: mkAvifApps (ulib.mingwStaticCross pkgs);
     };
 }
